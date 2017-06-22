@@ -1,0 +1,56 @@
+---
+title: "Semantic Associate Retrieval Practice"
+subtitle: "Pilot 2"
+author: "William Hopper"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center", fig.width = 9)
+library(dplyr)
+library(stringdist)
+library(tibble)
+library(ggplot2)
+library(tidyr)
+library(pander)
+```
+
+```{r reading}
+oldwd <- setwd("data-raw")
+
+# Condition Assignments
+lists <-  read.csv("lists.csv", stringsAsFactors = FALSE)
+
+column_types <- c("integer","integer","integer", "integer", "integer",
+                  "character", "character", "numeric", "integer", "numeric",
+                  "numeric", "numeric", "numeric", "character")
+# Test Practice
+test_practice_raw <- read.csv("test_practice.csv", stringsAsFactors = FALSE, na.strings = "",
+                              colClasses = column_types) %>%
+  mutate(recalled = as.logical(recalled))
+# Final Test
+final_test_raw <- read.csv("final_test.csv", stringsAsFactors = FALSE, na.strings = "",
+                           colClasses = column_types) %>%
+  mutate(recalled = as.logical(recalled))
+
+oldwd <- setwd(oldwd)
+```
+
+```{r tidying}
+join_variables <- c("subject", "id", "list","session")
+
+# Remove subject from the first pilot experiment that did not give first-letter
+# hints on the semantic cue practice tests.
+sub_limits <- quo(subject >= 1)
+
+test_practice_raw <- filter(test_practice_raw, !!sub_limits)
+
+
+final_test_raw <- filter_(final_test_raw, .dots = sub_limits) %>%
+  left_join(x = .,
+            y = conditions[c(join_by, "practice")],
+            by = join_by)
+
