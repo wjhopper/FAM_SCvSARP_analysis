@@ -1,5 +1,5 @@
-.Rproj*
 .Rhistory
 .Rdata
 vignettes/*cache
 data-raw/*.tar.gz
+.Rproj.user

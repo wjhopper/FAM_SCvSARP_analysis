@@ -16,13 +16,15 @@ library(tibble)
 library(ggplot2)
 library(tidyr)
 library(pander)
+source("R/test_tidying.R")
 ```
 
 ```{r reading}
 oldwd <- setwd("data-raw")
 
-# Condition Assignments
-lists <-  read.csv("lists.csv", stringsAsFactors = FALSE)
+# Lists/condition assignment table
+conditions <-  read.csv("lists.csv", stringsAsFactors = FALSE) %>%
+  rename(practice_cue_type = cue_type)
 
 column_types <- c("integer","integer","integer", "integer", "integer",
                   "character", "character", "numeric", "integer", "numeric",
@@ -31,26 +33,61 @@ column_types <- c("integer","integer","integer", "integer", "integer",
 test_practice_raw <- read.csv("test_practice.csv", stringsAsFactors = FALSE, na.strings = "",
                               colClasses = column_types) %>%
   mutate(recalled = as.logical(recalled))
+
 # Final Test
 final_test_raw <- read.csv("final_test.csv", stringsAsFactors = FALSE, na.strings = "",
                            colClasses = column_types) %>%
   mutate(recalled = as.logical(recalled))
 
-oldwd <- setwd(oldwd)
+setwd(oldwd)
+
+rm(column_types)
 ```
 
 ```{r tidying}
-join_variables <- c("subject", "id", "list","session")
+join_variables <- c("subject", "id", "list")
+select_variables <- c(join_variables, "practice", "practice_cue_type")
 
-# Remove subject from the first pilot experiment that did not give first-letter
-# hints on the semantic cue practice tests.
+# Remove subjects with technical problems from the dataset.
 sub_limits <- quo(subject >= 1)
 
-test_practice_raw <- filter(test_practice_raw, !!sub_limits)
-
-
-final_test_raw <- filter_(final_test_raw, .dots = sub_limits) %>%
+test_practice_raw <- filter(test_practice_raw, !!sub_limits) %>%
   left_join(x = .,
-            y = conditions[c(join_by, "practice")],
-            by = join_by)
+            y = conditions[select_variables],
+            by = join_variables) %>%
+  test_tidying()
 
+# Check these fuzzy matches by hand
+tp_fuzzy <- filter(tibble::rownames_to_column(test_practice_raw, "row"),
+                   !hard_match & fuzzy_match) %>%
+   select(row, subject, cue, target, response)
+
+final_test_raw <- filter(final_test_raw, !!sub_limits) %>%
+  left_join(x = .,
+            y = conditions[select_variables],
+            by = join_variables) %>%
+  test_tidying()
+
+# Check these fuzzy matches by hand
+final_fuzzy <- filter(tibble::rownames_to_column(final_test_raw, "row"),
+                      !hard_match & fuzzy_match) %>%
+   select(row, subject, cue, target, response)
+
+# These are determined by manual inspection
+final_test_raw[final_test_raw$subject == 21 & final_test_raw$cue == "comedy",
+               'fuzzy_match'] <- FALSE
+
+## Combine practice and final tests into one data frame
+tests_raw <- bind_rows(`1`=test_practice_raw, `2`=final_test_raw,
+                       .id = "test") %>%
+  rename(correct = fuzzy_match) %>%
+  mutate(logRT = log(RT),
+         test = as.numeric(test)) %>%
+  select(subject, test, list, trial, practice, practice_cue_type, decided, recalled,
+         correct, RT, logRT, pre_typing_lag:post_typing_lag)
+
+# Remove trials where a remember/don't remember decision was not reached, and trial timed out.
+tests_raw <- filter(tests_raw, decided)
+
+rm(tp_fuzzy, final_fuzzy, join_variables, select_variables)
+```
