@@ -24,7 +24,10 @@ oldwd <- setwd("data-raw")
 
 # Lists/condition assignment table
 conditions <-  read.csv("lists.csv", stringsAsFactors = FALSE) %>%
-  rename(practice_cue_type = cue_type)
+  rename(practice_cue_type = cue_type) %>%
+  mutate(practice_cue_type = replace(practice_cue_type,
+                                     which(practice == "N"),
+                                     NA_character_))
 
 ## Group assignment table
 subjects <- read.csv("participants.csv", stringsAsFactors = FALSE)
