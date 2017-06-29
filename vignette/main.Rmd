@@ -126,4 +126,62 @@ acc_by_subject <- tests_raw %>%
             N_correct = sum(correct),
             percent_correct = N_correct/N_acc_trials) %>%
   ungroup()
+
+#### Calculate the RT difference from baseline on final test
+tmp <- RT_by_subject %>%
+  filter(test == 2) %>%
+  select(-test, -N_RT_trials) %>%
+  gather(key="var", value="value", mean_RT, median_RT, mean_logRT) %>%
+  unite(var, practice, var, sep=".") %>%
+  spread(var, value)
+
+control <- filter(tmp, is.na(practice_cue_type)) %>%
+  select(subject, correct, starts_with("N"))
+treatment <- filter(tmp, !is.na(practice_cue_type))%>%
+  select(-starts_with("N"))
+
+RT_diff_by_subject <- left_join(treatment, control, 
+                                by=c("subject", "correct")) %>%
+  mutate(SN.median_RT = S.median_RT - N.median_RT,
+         TN.median_RT = T.median_RT - N.median_RT,
+         SN.mean_logRT = S.mean_logRT - N.mean_logRT,
+         TN.mean_logRT = T.mean_logRT - N.mean_logRT,
+         SN.mean_RT = S.mean_RT - N.mean_RT,
+         TN.mean_RT = T.mean_RT - N.mean_RT) %>%
+  select(subject, group, practice_cue_type, correct,
+         SN.median_RT, TN.median_RT,
+         SN.mean_logRT, TN.mean_logRT,
+         SN.mean_RT, TN.mean_RT) %>%
+  gather(key="var", value="value", -(subject:correct)) %>%
+  separate(var, into = c("practice", "var"),sep = "\\.") %>%
+  spread(var,value) %>%
+  mutate(practice = paste(substr(practice, 1, 1),
+                          substr(practice, 2, 2),
+                          sep = "-"))
+
+
+#### Calculate the accuracy difference from baseline on final test
+tmp <- acc_by_subject %>%
+  filter(test == 2) %>%
+  select(subject:practice_cue_type, percent_correct, -test) %>%
+  gather(key="var", value="value", percent_correct) %>%
+  unite(var, practice, var, sep=".") %>%
+  spread(var, value)
+
+control <- filter(tmp, is.na(practice_cue_type)) %>%
+  select(subject, starts_with("N"))
+treatment <- filter(tmp, !is.na(practice_cue_type))%>%
+  select(-starts_with("N"))
+
+acc_diff_by_subject <- left_join(treatment, control, 
+                                by=c("subject")) %>%
+  mutate(SN.percent_correct = S.percent_correct - N.percent_correct,
+         TN.percent_correct = T.percent_correct - N.percent_correct) %>%
+  select(subject, group, practice_cue_type, SN.percent_correct, TN.percent_correct) %>%
+  gather(key="var", value="value", SN.percent_correct, TN.percent_correct) %>%
+  separate(var, into = c("practice", "var"),sep = "\\.") %>%
+  spread(var,value) %>%
+  mutate(practice = paste(substr(practice, 1, 1),
+                          substr(practice, 2, 2),
+                          sep = "-"))
 ```
