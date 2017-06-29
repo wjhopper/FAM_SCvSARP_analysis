@@ -26,6 +26,9 @@ oldwd <- setwd("data-raw")
 conditions <-  read.csv("lists.csv", stringsAsFactors = FALSE) %>%
   rename(practice_cue_type = cue_type)
 
+## Group assignment table
+subjects <- read.csv("participants.csv", stringsAsFactors = FALSE)
+
 column_types <- c("integer","integer","integer", "integer", "integer",
                   "character", "character", "numeric", "integer", "numeric",
                   "numeric", "numeric", "numeric", "character")
@@ -49,9 +52,13 @@ join_variables <- c("subject", "id", "list")
 select_variables <- c(join_variables, "practice", "practice_cue_type")
 
 # Remove subjects with technical problems from the dataset.
-sub_limits <- quo(subject >= 1)
+subjects <- filter(subjects, subject >= 1)
 
-test_practice_raw <- filter(test_practice_raw, !!sub_limits) %>%
+## Practice Test
+test_practice_raw <- test_practice_raw %>%
+  inner_join(x = .,
+             y = subjects[c("subject","group")],
+             by = "subject") %>%
   left_join(x = .,
             y = conditions[select_variables],
             by = join_variables) %>%
@@ -62,7 +69,12 @@ tp_fuzzy <- filter(tibble::rownames_to_column(test_practice_raw, "row"),
                    !hard_match & fuzzy_match) %>%
    select(row, subject, cue, target, response)
 
-final_test_raw <- filter(final_test_raw, !!sub_limits) %>%
+
+# Final Test
+final_test_raw <- final_test_raw %>%
+  inner_join(x = .,
+             y = subjects[c("subject","group")],
+             by = "subject") %>%
   left_join(x = .,
             y = conditions[select_variables],
             by = join_variables) %>%
@@ -83,7 +95,7 @@ tests_raw <- bind_rows(`1`=test_practice_raw, `2`=final_test_raw,
   rename(correct = fuzzy_match) %>%
   mutate(logRT = log(RT),
          test = as.numeric(test)) %>%
-  select(subject, test, list, trial, practice, practice_cue_type, decided, recalled,
+  select(subject, group, test, list, trial, practice, practice_cue_type, decided, recalled,
          correct, RT, logRT, pre_typing_lag:post_typing_lag)
 
 # Remove trials where a remember/don't remember decision was not reached, and trial timed out.
