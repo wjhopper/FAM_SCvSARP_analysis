@@ -99,10 +99,31 @@ tests_raw <- bind_rows(`1`=test_practice_raw, `2`=final_test_raw,
   mutate(logRT = log(RT),
          test = as.numeric(test)) %>%
   select(subject, group, test, list, trial, practice, practice_cue_type, decided, recalled,
-         correct, RT, logRT, pre_typing_lag:post_typing_lag)
+         correct, RT, logRT, pre_typing_lag:post_typing_lag) %>%
+  arrange(subject, test, list)
 
 # Remove trials where a remember/don't remember decision was not reached, and trial timed out.
 tests_raw <- filter(tests_raw, decided)
 
 rm(tp_fuzzy, final_fuzzy, join_variables, select_variables)
+```
+
+```{r aggregating_by_subject}
+#### Aggregate reaction time measures for each subject in each condition
+RT_by_subject <- tests_raw %>%
+  group_by(subject, group, test, practice, practice_cue_type, correct) %>%
+  filter(!is.na(RT)) %>%
+  summarise(N_RT_trials = n(),
+            mean_RT = mean(RT),
+            mean_logRT = mean(logRT),
+            median_RT = median(RT)) %>%
+  ungroup()
+
+#### Calculate accuracy for each subject in each condition
+acc_by_subject <- tests_raw %>%
+  group_by(subject, group, test, practice, practice_cue_type) %>%
+  summarise(N_acc_trials = n(),
+            N_correct = sum(correct),
+            percent_correct = N_correct/N_acc_trials) %>%
+  ungroup()
 ```
