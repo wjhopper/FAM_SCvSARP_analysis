@@ -16,11 +16,11 @@ library(tibble)
 library(ggplot2)
 library(tidyr)
 library(pander)
-source("R/test_tidying.R")
+source("../R/test_tidying.R")
 ```
 
 ```{r reading}
-oldwd <- setwd("data-raw")
+oldwd <- setwd("../data-raw")
 
 # Lists/condition assignment table
 conditions <-  read.csv("lists.csv", stringsAsFactors = FALSE) %>%
