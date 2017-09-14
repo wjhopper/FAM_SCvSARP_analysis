@@ -1,6 +1,5 @@
 ---
-title: "Semantic Associate Retrieval Practice"
-subtitle: "Pilot 2"
+title: "Same Cue vs Semantic Associate Retrieval Practice"
 author: "William Hopper"
 date: "`r Sys.Date()`"
 output:
@@ -185,3 +184,42 @@ acc_diff_by_subject <- left_join(treatment, control,
                           substr(practice, 2, 2),
                           sep = "-"))
 ```
+
+```{r aggregating_over_subjects}
+acc <- group_by(acc_by_subject,
+                group, test, practice, practice_cue_type) %>%
+  summarize(mean_percent_correct = mean(percent_correct),
+            sem_percent_correct = whoppeR::sem(percent_correct)) %>%
+  rename(percent_correct = mean_percent_correct) %>%
+  ungroup()
+```
+
+```{r plot_group_averages}
+acc_plot <- mutate(acc,
+                   condition = as.character(interaction(practice, practice_cue_type))
+                   ) %>%
+  replace_na(list(condition = "N")) %>%
+  filter(test == 2) %>%
+  ggplot(aes(x = group, y = percent_correct,
+                         color = condition,
+                         group = condition
+                         )
+                     ) +
+  geom_point(size = 2) +
+  geom_line() +
+  scale_x_discrete("Group",
+                   limits = c("immediate","delay"),
+                   labels = c("Immediate", "Delay")) +
+  scale_y_continuous("Percent Correct", limits = c(.2, .8),
+                     breaks = seq(.2, .8, by = .1)) + 
+  scale_color_discrete("Practice\nCondition",
+                       labels = c("S.episodic" = "Restudy, Episodic",
+                                  "T.episodic" = "Test, Episodic",
+                                  "S.semantic" = "Restudy, Semantic",
+                                  "T.semantic" = "Test, Semantic",
+                                  "N" = "No Practice")) +
+  theme_grey(base_size = 16)
+
+print(acc_plot)  
+```
+
