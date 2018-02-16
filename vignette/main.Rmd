@@ -223,3 +223,5 @@ acc_plot <- mutate(acc,
 print(acc_plot)  
 ```
 
+# Questions
+- Are differences between semantic-associate retrieval pratice and semantic-associate restudy due to retrieving the wrong thing, e.g., a *different* semantic associate?
