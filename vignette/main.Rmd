@@ -18,6 +18,7 @@ library(ggplot2)
 library(tidyr)
 library(pander)
 library(whoppeR)
+library(afex)
 source("../R/test_tidying.R")
 ```
 
@@ -238,6 +239,39 @@ acc_plot <- mutate(acc, condition = factor(condition,
 
 print(acc_plot)
 ```
+
+```{r acc_glmer}
+afex::set_sum_contrasts()
+
+acc_data <- mutate(tests_raw,
+                   condition = replace(as.character(interaction(practice, practice_cue_type)),
+                                       is.na(practice_cue_type),
+                                       "N"),
+                   condition = factor(condition,
+                                      levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
+                                      )
+                   ) %>%
+  filter(test == 2)
+
+PSOCK_cl <- parallel::makeCluster(parallel::detectCores())
+
+acc_glmer <- mixed(correct ~ group*condition + (condition|subject),
+                   data = acc_data,
+                   method = "LRT",
+                   cl = PSOCK_cl,
+                   family = binomial,
+                   progress = TRUE
+                   )
+
+parallel::stopCluster(PSOCK_cl)
+
+nice(acc_glmer)
+summary(acc_glmer$full_model)
+acc_contr <- emmeans(acc_glmer, consec ~ condition | group,
+                     reverse=TRUE, adjust="mvt")
+
+```
+
 
 ```{r RT_means}
 RT <- filter(RT_by_subject, test == 2, correct) %>%
