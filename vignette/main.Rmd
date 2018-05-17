@@ -5,6 +5,8 @@ date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -15,6 +17,7 @@ library(tibble)
 library(ggplot2)
 library(tidyr)
 library(pander)
+library(whoppeR)
 source("../R/test_tidying.R")
 ```
 
@@ -35,13 +38,13 @@ column_types <- c("integer","integer","integer", "integer", "integer",
                   "character", "character", "numeric", "integer", "numeric",
                   "numeric", "numeric", "numeric", "character")
 # Test Practice
-test_practice_raw <- read.csv("test_practice.csv", stringsAsFactors = FALSE, na.strings = "",
-                              colClasses = column_types) %>%
+test_practice_raw <- read.csv("test_practice.csv", stringsAsFactors = FALSE,
+                              na.strings = "", colClasses = column_types) %>%
   mutate(recalled = as.logical(recalled))
 
 # Final Test
-final_test_raw <- read.csv("final_test.csv", stringsAsFactors = FALSE, na.strings = "",
-                           colClasses = column_types) %>%
+final_test_raw <- read.csv("final_test.csv", stringsAsFactors = FALSE,
+                           na.strings = "", colClasses = column_types) %>%
   mutate(recalled = as.logical(recalled))
 
 setwd(oldwd)
@@ -186,41 +189,88 @@ acc_diff_by_subject <- left_join(treatment, control,
 ```
 
 ```{r aggregating_over_subjects}
-acc <- group_by(acc_by_subject,
-                group, test, practice, practice_cue_type) %>%
-  summarize(mean_percent_correct = mean(percent_correct),
-            sem_percent_correct = whoppeR::sem(percent_correct)) %>%
-  rename(percent_correct = mean_percent_correct) %>%
-  ungroup()
+acc <- filter(acc_by_subject, test == 2) %>%
+  mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
+                             is.na(practice_cue_type),
+                             "N")
+         ) %>%
+  whoppeR::WISEsummary(dependentvars = "percent_correct", idvar = "subject",
+                       betweenvars = "group", withinvars = "condition"
+                       ) %>%
+  rename(percent_correct = percent_correct_mean)
 ```
 
+```{r}
+color_scale <- scale_color_discrete("Practice\nCondition",
+                                    labels = c("S.episodic" = "Restudy, Episodic",
+                                               "T.episodic" = "Test, Episodic",
+                                               "S.semantic" = "Restudy, Semantic",
+                                               "T.semantic" = "Test, Semantic",
+                                               "N" = "No Practice")
+                                    )
+x_axis_scale <- scale_x_discrete("Group",
+                                 limits = c("immediate","delay"),
+                                 labels = c("Immediate", "Delay"),
+                                 expand = c(0, .1)
+                                 )
+```
+
+
 ```{r plot_group_averages}
-acc_plot <- mutate(acc,
-                   condition = as.character(interaction(practice, practice_cue_type))
+acc_plot <- mutate(acc, condition = factor(condition,
+                                           levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
+                                           )
                    ) %>%
-  replace_na(list(condition = "N")) %>%
-  filter(test == 2) %>%
   ggplot(aes(x = group, y = percent_correct,
-                         color = condition,
-                         group = condition
-                         )
-                     ) +
-  geom_point(size = 2) +
-  geom_line() +
-  scale_x_discrete("Group",
-                   limits = c("immediate","delay"),
-                   labels = c("Immediate", "Delay")) +
+             color = condition, group = condition
+             )
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = percent_correct_CI_lower, ymax = percent_correct_CI_upper),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
   scale_y_continuous("Percent Correct", limits = c(.2, .8),
                      breaks = seq(.2, .8, by = .1)) + 
-  scale_color_discrete("Practice\nCondition",
-                       labels = c("S.episodic" = "Restudy, Episodic",
-                                  "T.episodic" = "Test, Episodic",
-                                  "S.semantic" = "Restudy, Semantic",
-                                  "T.semantic" = "Test, Semantic",
-                                  "N" = "No Practice")) +
+  color_scale +
   theme_grey(base_size = 16)
 
-print(acc_plot)  
+print(acc_plot)
+```
+
+```{r RT_means}
+RT <- filter(RT_by_subject, test == 2, correct) %>%
+  mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
+                             is.na(practice_cue_type),
+                             "N")
+         ) %>%
+  whoppeR::WISEsummary(dependentvars = c("mean_RT", "mean_logRT", "median_RT"), idvar = "subject",
+                       betweenvars = "group", withinvars = "condition"
+                       )
+names(RT) <- gsub(pattern = "_mean$", "", names(RT))
+```
+
+```{r RT_plot}
+RT_plot <- mutate(RT, condition = factor(condition,
+                                         levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
+                                         )
+                  ) %>%
+  ggplot(aes(x = group, y = mean_logRT,
+             color = condition, group = condition
+             )
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = mean_logRT_CI_lower, ymax = mean_logRT_CI_upper),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
+  scale_y_continuous("Log RT (s)") + 
+  color_scale +
+  theme_grey(base_size = 16)
+
+print(RT_plot)
 ```
 
 # Questions
