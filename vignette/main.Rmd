@@ -10,7 +10,8 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE, warning = FALSE}
-knitr::opts_chunk$set(echo = FALSE, fig.align = "center", fig.width = 9)
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center", fig.width = 9,
+                      cache = TRUE)
 library(dplyr)
 library(stringdist)
 library(tibble)
@@ -256,7 +257,7 @@ acc_data <- mutate(tests_raw,
 
 PSOCK_cl <- parallel::makeCluster(parallel::detectCores())
 
-acc_glmer <- mixed(correct ~ group*condition + (condition|subject),
+acc_glmer <- mixed(correct ~ group*condition + (1|subject),
                    data = acc_data,
                    method = "LRT",
                    cl = PSOCK_cl,
@@ -266,13 +267,22 @@ acc_glmer <- mixed(correct ~ group*condition + (condition|subject),
 
 parallel::stopCluster(PSOCK_cl)
 
-nice(acc_glmer)
 summary(acc_glmer$full_model)
 acc_contr <- emmeans(acc_glmer, consec ~ condition | group,
                      reverse=TRUE, adjust="mvt")
 
+knitr::kable(nice(acc_glmer), format = 'html') %>%
+  kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
+
+knitr::kable(acc_contr$contrasts,  format = 'html', align = 'rcccccc',
+             digits = c(0,0,3,3,3,3,4)) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 2)
 ```
 
+```{r acc_rstan_glmer}
+
+```
 
 ```{r RT_means}
 RT <- filter(RT_by_subject, test == 2, correct) %>%

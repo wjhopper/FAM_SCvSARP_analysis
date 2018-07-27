@@ -1,5 +1,5 @@
 .Rhistory
 .Rdata
-vignettes/*cache
+vignette/*cache
 data-raw/*.tar.gz
 .Rproj.user
