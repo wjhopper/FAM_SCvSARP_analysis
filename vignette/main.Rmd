@@ -12,6 +12,7 @@ editor_options:
 ```{r setup, include=FALSE, warning = FALSE}
 knitr::opts_chunk$set(echo = FALSE, fig.align = "center", fig.width = 9,
                       cache = TRUE)
+options(mc.cores = parallel::detectCores())
 library(dplyr)
 library(stringdist)
 library(tibble)
@@ -245,14 +246,30 @@ print(acc_plot)
 ```{r acc_glmer}
 afex::set_sum_contrasts()
 
+# This function absolutely relies on hard-coding the order of the factor levels in the regressions anlysis. If the factors are for some reason ordered in some other fashion than described in the row names here, these contrasts will not match their labels!
+
+my_contrasts.emmc <- function(...) {
+  custom_contrast_matrix <- data.frame(`S.semantic - S.episodic` = c(-1, 1, 0, 0, 0),
+                                       `T.semantic - S.semantic` = c(0, -1, 1, 0, 0),
+                                       `T.episodic - T.semantic` = c(0, 0, -1, 1, 0),
+                                       `T.episodic - S.episodic` = c(-1, 0, 0, 1, 0),
+                                       `N - T.episodic` =          c(0, 0, 0, -1, 1),
+                                       `N - T.semantic` =          c(0, 0, -1, 0, 1),
+                                       `N - S.semantic` =          c(0, -1, 0, 0, 1),
+                                       `N - S.episodic` =          c(-1, 0, 0, 0, 1),
+                                       row.names = c("S.episodic","S.semantic","T.semantic","T.episodic","N"),
+                                       check.names = FALSE
+                                       )
+  return(custom_contrast_matrix)
+}
 acc_data <- mutate(tests_raw,
                    condition = replace(as.character(interaction(practice, practice_cue_type)),
                                        is.na(practice_cue_type),
                                        "N"),
                    condition = factor(condition,
                                       levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
-                                      )
-                   ) %>%
+                                      ),
+                   group = factor(group, levels = c("immediate","delay"))) %>%
   filter(test == 2)
 
 PSOCK_cl <- parallel::makeCluster(parallel::detectCores())
@@ -266,18 +283,21 @@ acc_glmer <- mixed(correct ~ group*condition + (1|subject),
                    )
 
 parallel::stopCluster(PSOCK_cl)
-
 summary(acc_glmer$full_model)
-acc_contr <- emmeans(acc_glmer, consec ~ condition | group,
-                     reverse=TRUE, adjust="mvt")
+
+acc_emm <- emmeans(acc_glmer, specs = c("group", "condition"), type = "response")
+acc_contrasts <- summary(contrast(acc_emm, method = my_contrasts.emmc, by ="group",
+                                  type ="link", adjust = 'holm')
+                         )
 
 knitr::kable(nice(acc_glmer), format = 'html') %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
-knitr::kable(acc_contr$contrasts,  format = 'html', align = 'rcccccc',
-             digits = c(0,0,3,3,3,3,4)) %>%
+select(as.data.frame(acc_contrasts), group, contrast, estimate:p.value) %>%
+knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = paste(attr(acc_contrasts,"mesg"), collapse = ". ")) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
-  kableExtra::collapse_rows(columns = 2)
+  kableExtra::collapse_rows(columns = 1)
 ```
 
 ```{r acc_rstan_glmer}
