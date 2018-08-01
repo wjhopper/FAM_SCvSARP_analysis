@@ -18,7 +18,6 @@ library(stringdist)
 library(tibble)
 library(ggplot2)
 library(tidyr)
-library(pander)
 library(whoppeR)
 library(afex)
 library(bindrcpp)
@@ -220,7 +219,6 @@ x_axis_scale <- scale_x_discrete("Group",
                                  )
 ```
 
-
 ```{r plot_group_averages}
 acc_plot <- mutate(acc, condition = factor(condition,
                                            levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
@@ -290,7 +288,9 @@ acc_emm <- emmeans(acc_glmer, specs = c("group", "condition"), type = "response"
 acc_contrasts <- summary(contrast(acc_emm, method = my_contrasts.emmc, by ="group",
                                   type ="link", adjust = 'holm')
                          )
-
+acc_contrast_s2 <- summary(contrast(acc_emm, method = 'pairwise', by ="group",
+                                  type ="link", adjust = 'holm')
+                         )
 knitr::kable(nice(acc_glmer), format = 'html') %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
@@ -301,7 +301,7 @@ knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
   kableExtra::collapse_rows(columns = 1)
 ```
 
-```{r acc_rstan_glmer, eval=FALSE}
+```{r rstan_acc_glmer}
 acc_glmer_uninformed <- stan_glmer(correct ~ group*condition + (1|subject),
                         data = acc_data,
                         family = binomial(link = "logit"),
@@ -350,6 +350,43 @@ print(RT_plot)
 ```
 
 
+```{r RT_lmer}
+RT_lmer_data <- filter(acc_data, correct) 
+cor_RT_lmm <- mixed(logRT ~ group*condition + (condition|subject),
+                    method = "KR",
+                    data = RT_lmer_data,
+                    control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))
+                    )
+cor_RT_lmm_summary <- summary(cor_RT_lmm$full_model, ddf="Kenward-Roger")
+
+emm_options(pbkrtest.limit = 6000)
+RT_emm <- emmeans(cor_RT_lmm , specs = c("group", "condition"))
+RT_contrasts <- summary(contrast(RT_emm, method = my_contrasts.emmc, by ="group",
+                                  adjust = 'holm')
+                         )
+
+knitr::kable(nice(cor_RT_lmm), format = 'html') %>%
+  kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
+
+select(as.data.frame(RT_contrasts), group, contrast, estimate:p.value) %>%
+knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = paste(attr(RT_contrasts,"mesg"), collapse = ". ")) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 1)
+```
+
+
+```{r rstan_RT_glmer}
+RT_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subject),
+                                data = RT_lmer_data,
+                                seed = 123)
+
+RT_lmer_uninformed_EMM <- emmeans(RT_lmer_uninformed, ~ group * condition)
+RT_lmer_uninformed_contrasts <- contrast(RT_lmer_uninformed_EMM, 'my_contrasts',
+                                         by = "group")
+
+plot(RT_lmer_uninformed_contrasts) + geom_vline(xintercept = 0)
+```
 
 # Questions
 - Are differences between semantic-associate retrieval pratice and semantic-associate restudy due to retrieving the wrong thing, e.g., a *different* semantic associate?
