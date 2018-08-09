@@ -310,6 +310,22 @@ acc_glmer_uninformed <- stan_glmer(correct ~ group*condition + (1|subject),
 acc_glmer_uninformed_EMM <- emmeans(acc_glmer_uninformed,
                                     specs = c("group", "condition"),
                                     type = "response")
+acc_glmer_uninformed_EMM_plot <-
+  ggplot(as.data.frame(acc_glmer_uninformed_EMM),
+         aes(x = group, y = prob, color = condition, group = condition)
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = lower.HPD, ymax = upper.HPD),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
+  scale_y_continuous("Percent Correct", limits = c(.1, .9),
+                     breaks = seq(.1, .9, by = .1)) +
+  color_scale +
+  theme_grey(base_size = 16)
+print(acc_glmer_uninformed_EMM_plot)
+
 acc_glmer_uninformed_contrasts <- contrast(acc_glmer_uninformed_EMM, 'my_contrasts',
                                            by = "group", type ="link")
 plot(acc_glmer_uninformed_contrasts) + geom_vline(xintercept = 0)
