@@ -331,6 +331,40 @@ acc_glmer_uninformed_contrasts <- contrast(acc_glmer_uninformed_EMM, 'my_contras
 plot(acc_glmer_uninformed_contrasts) + geom_vline(xintercept = 0)
 ```
 
+```{r rstan_acc_glmer_informed-priors}
+coef_priors = list("group1" = c('mean' = 0.837, 'sd' = .131),
+                   "condition1" = c('mean' = 0.635, 'sd' = 0.052),
+                   "condition2" = c('mean' = 0.252, 'sd' = 0.042),
+                   "condition3" = c('mean' = 0.142, 'sd' = 0.041),
+                   "condition4" = c('mean' = -0.008, 'sd' = 0.047),
+                   "group1:condition1" = c('mean' = 0.406, 'sd' = 0.052),
+                   "group1:condition2" = c('mean' = 0, 'sd' = 0.042),
+                   "group1:condition3" = c('mean' = 0, 'sd' = 0.041),
+                   "group1:condition4" = c('mean' = -0.354, 'sd' = 0.047))
+
+acc_rstan_glmer <- stan_glmer(correct ~ group*condition + (1|subject),
+                              data = acc_data,
+                              prior_intercept = normal(0.268, 5 * .131, autoscale = FALSE),
+                              prior = normal(location = sapply(coef_priors, `[[`, "mean"),
+                                             scale = 5 * sapply(coef_priors, `[[`, "sd"),
+                                             autoscale = FALSE
+                                             ),
+                              family = binomial(link = "logit"),
+                              seed = 123)
+
+acc_rstan_glmer_EMM <- emmeans(acc_rstan_glmer,
+                               specs = c("group", "condition"),
+                               type = "response")
+acc_rstan_glmer_EMM_plot <-  acc_glmer_uninformed_EMM_plot %+%
+  as.data.frame(acc_rstan_glmer_EMM)
+print(acc_rstan_glmer_EMM_plot)
+
+acc_rstan_glmer_contrasts <- contrast(acc_rstan_glmer_EMM, 'my_contrasts',
+                                      by = "group", type ="link")
+plot(acc_rstan_glmer_contrasts) + geom_vline(xintercept = 0)
+```
+
+
 ```{r RT_means}
 RT <- filter(RT_by_subject, test == 2, correct) %>%
   mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
