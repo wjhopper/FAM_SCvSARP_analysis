@@ -17,6 +17,7 @@ library(dplyr)
 library(stringdist)
 library(tibble)
 library(ggplot2)
+library(gridExtra)
 library(tidyr)
 library(whoppeR)
 library(afex)
@@ -114,7 +115,7 @@ tests_raw <- filter(tests_raw, decided)
 rm(tp_fuzzy, final_fuzzy, join_variables, select_variables)
 ```
 
-```{r aggregating_by_subject}
+```{r acc_and_RT_by_subject}
 #### Aggregate reaction time measures for each subject in each condition
 RT_by_subject <- tests_raw %>%
   group_by(subject, group, test, practice, practice_cue_type, correct) %>%
@@ -192,19 +193,7 @@ acc_diff_by_subject <- left_join(treatment, control,
                           sep = "-"))
 ```
 
-```{r aggregating_over_subjects}
-acc <- filter(acc_by_subject, test == 2) %>%
-  mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
-                             is.na(practice_cue_type),
-                             "N")
-         ) %>%
-  whoppeR::WISEsummary(dependentvars = "percent_correct", idvar = "subject",
-                       betweenvars = "group", withinvars = "condition"
-                       ) %>%
-  rename(percent_correct = percent_correct_mean)
-```
-
-```{r}
+```{r plotting_scales}
 color_scale <- scale_color_discrete("Practice\nCondition",
                                     labels = c("S.episodic" = "Restudy, Episodic",
                                                "T.episodic" = "Test, Episodic",
@@ -219,7 +208,20 @@ x_axis_scale <- scale_x_discrete("Group",
                                  )
 ```
 
-```{r plot_group_averages}
+## Accuracy
+```{r acc_means}
+acc <- filter(acc_by_subject, test == 2) %>%
+  mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
+                             is.na(practice_cue_type),
+                             "N")
+         ) %>%
+  whoppeR::WISEsummary(dependentvars = "percent_correct", idvar = "subject",
+                       betweenvars = "group", withinvars = "condition"
+                       ) %>%
+  rename(percent_correct = percent_correct_mean)
+```
+
+```{r acc_means_plot}
 acc_plot <- mutate(acc, condition = factor(condition,
                                            levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
                                            )
@@ -242,6 +244,7 @@ acc_plot <- mutate(acc, condition = factor(condition,
 print(acc_plot)
 ```
 
+### lme4::glmer
 ```{r acc_glmer}
 afex::set_sum_contrasts()
 
@@ -259,8 +262,11 @@ my_contrasts.emmc <- function(...) {
                                        row.names = c("S.episodic","S.semantic","T.semantic","T.episodic","N"),
                                        check.names = FALSE
                                        )
+  attr(custom_contrast_matrix, "desc") <- "Subset of pairwise comparisions"
+  attr(custom_contrast_matrix, "adjust") <- "holm"
   return(custom_contrast_matrix)
 }
+
 acc_data <- mutate(tests_raw,
                    condition = replace(as.character(interaction(practice, practice_cue_type)),
                                        is.na(practice_cue_type),
@@ -283,35 +289,69 @@ acc_glmer <- mixed(correct ~ group*condition + (1|subject),
 
 parallel::stopCluster(PSOCK_cl)
 summary(acc_glmer$full_model)
+```
 
-acc_emm <- emmeans(acc_glmer, specs = c("group", "condition"), type = "response")
-acc_contrasts <- summary(contrast(acc_emm, method = my_contrasts.emmc, by ="group",
-                                  type ="link", adjust = 'holm')
-                         )
-acc_contrast_s2 <- summary(contrast(acc_emm, method = 'pairwise', by ="group",
-                                  type ="link", adjust = 'holm')
-                         )
+```{r acc_glmer_contrasts}
+acc_glmer_EMM <- emmeans(acc_glmer, specs = c("group", "condition"), type = "response")
+acc_glmer_contrasts <- contrast(acc_glmer_EMM, method = my_contrasts.emmc, 
+                                by = "group", type ="link", adjust = 'holm')
+```
+
+```{r acc_glmer_display}
+acc_glmer_EMM_plot <-
+  ggplot(as.data.frame(acc_glmer_EMM),
+         aes(x = group, y = prob, color = condition, group = condition)
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
+  scale_y_continuous("Percent Correct", limits = c(.1, .9),
+                     breaks = seq(.1, .9, by = .1)) +
+  color_scale +
+  theme_grey(base_size = 16) +
+  ggtitle("lme4::glmer Model Predictions")
+
+acc_glmer_contrasts_plot <- plot(acc_glmer_contrasts) +
+  geom_vline(xintercept = 0) +
+  ggtitle("Contrasts")
+
+grid.arrange(acc_glmer_EMM_plot, acc_glmer_contrasts_plot, ncol = 2)
+
 knitr::kable(nice(acc_glmer), format = 'html') %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
-select(as.data.frame(acc_contrasts), group, contrast, estimate:p.value) %>%
+select(as.data.frame(summary(acc_glmer_contrasts)), group, contrast, estimate:p.value) %>%
 knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = paste(attr(acc_contrasts,"mesg"), collapse = ". ")) %>%
+             caption = paste(attr(acc_glmer_contrasts,"mesg"), collapse = ". ")) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
 ```
 
-```{r rstan_acc_glmer}
-acc_glmer_uninformed <- stan_glmer(correct ~ group*condition + (1|subject),
-                        data = acc_data,
-                        family = binomial(link = "logit"),
-                        seed = 123)
+### rstanarm::stan_glmer
+#### Default weakly informative priors
+```{r rstan_acc_glmer_uninformed}
+acc_rstan_glmer_uninformed <- stan_glmer(correct ~ group*condition + (1|subject),
+                                         data = acc_data,
+                                         family = binomial(link = "logit"),
+                                         contrasts = list(group = 'contr.sum',
+                                                          condition = 'contr.sum'),
+                                         seed = 124, iter = 3000
+                                         )
 
-acc_glmer_uninformed_EMM <- emmeans(acc_glmer_uninformed,
-                                    specs = c("group", "condition"),
-                                    type = "response")
-acc_glmer_uninformed_EMM_plot <-
-  ggplot(as.data.frame(acc_glmer_uninformed_EMM),
+summary(acc_rstan_glmer_uninformed,
+        pars = names(fixef(acc_rstan_glmer_uninformed)))
+```
+
+```{r rstan_acc_glmer_uninformed_contrasts}
+acc_rstan_glmer_uninformed_EMM <- emmeans(acc_rstan_glmer_uninformed,
+                                          specs = c("group", "condition"),
+                                          type = "response")
+
+acc_rstan_glmer_uninformed_EMM_plot <-
+  ggplot(as.data.frame(acc_rstan_glmer_uninformed_EMM),
          aes(x = group, y = prob, color = condition, group = condition)
          ) +
   geom_point(size = 2, position = position_dodge(.1)) +
@@ -323,14 +363,22 @@ acc_glmer_uninformed_EMM_plot <-
   scale_y_continuous("Percent Correct", limits = c(.1, .9),
                      breaks = seq(.1, .9, by = .1)) +
   color_scale +
-  theme_grey(base_size = 16)
-print(acc_glmer_uninformed_EMM_plot)
+  theme_grey(base_size = 16) +
+  ggtitle("rstan_glmer Model Predictions\n(Weak Priors)")
 
-acc_glmer_uninformed_contrasts <- contrast(acc_glmer_uninformed_EMM, 'my_contrasts',
-                                           by = "group", type ="link")
-plot(acc_glmer_uninformed_contrasts) + geom_vline(xintercept = 0)
+acc_rstan_glmer_uninformed_contrasts <- contrast(acc_rstan_glmer_uninformed_EMM, 'my_contrasts',
+                                                 by = "group", type ="link")
+acc_rstan_glmer_uninformed_contrasts_plot <-
+  plot(acc_rstan_glmer_uninformed_contrasts) +
+  geom_vline(xintercept = 0) +
+  ggtitle("Contrasts")
+
+grid.arrange(acc_rstan_glmer_uninformed_EMM_plot,
+             acc_rstan_glmer_uninformed_contrasts_plot,
+             ncol = 2)
 ```
 
+#### Informed priors
 ```{r rstan_acc_glmer_informed-priors}
 coef_priors = list("group1" = c('mean' = 0.837, 'sd' = .131),
                    "condition1" = c('mean' = 0.635, 'sd' = 0.052),
@@ -344,40 +392,55 @@ coef_priors = list("group1" = c('mean' = 0.837, 'sd' = .131),
 
 acc_rstan_glmer <- stan_glmer(correct ~ group*condition + (1|subject),
                               data = acc_data,
+                              family = binomial(link = "logit"),
+                              contrasts = list(group = 'contr.sum',
+                                               condition = 'contr.sum'),
                               prior_intercept = normal(0.268, 5 * .131, autoscale = FALSE),
                               prior = normal(location = sapply(coef_priors, `[[`, "mean"),
                                              scale = 5 * sapply(coef_priors, `[[`, "sd"),
                                              autoscale = FALSE
                                              ),
-                              family = binomial(link = "logit"),
-                              seed = 123)
+                              seed = 124, iter = 3000)
 
+summary(acc_rstan_glmer, pars = names(fixef(acc_rstan_glmer)))
+```
+
+```{r rstan_acc_glmer_informed-priors_contrasts}
 acc_rstan_glmer_EMM <- emmeans(acc_rstan_glmer,
                                specs = c("group", "condition"),
                                type = "response")
-acc_rstan_glmer_EMM_plot <-  acc_glmer_uninformed_EMM_plot %+%
-  as.data.frame(acc_rstan_glmer_EMM)
-print(acc_rstan_glmer_EMM_plot)
+
+acc_rstan_glmer_EMM_plot <- acc_rstan_glmer_uninformed_EMM_plot %+%
+  as.data.frame(acc_rstan_glmer_EMM) +
+  ggtitle("rstan_glmer Model Predictions\n(Informative Priors)")
 
 acc_rstan_glmer_contrasts <- contrast(acc_rstan_glmer_EMM, 'my_contrasts',
                                       by = "group", type ="link")
-plot(acc_rstan_glmer_contrasts) + geom_vline(xintercept = 0)
+acc_rstan_glmer_contrasts_plot <- 
+  plot(acc_rstan_glmer_contrasts) +
+  geom_vline(xintercept = 0) +
+  ggtitle("Contrasts")
+
+grid.arrange(acc_rstan_glmer_EMM_plot,
+             acc_rstan_glmer_contrasts_plot,
+             ncol = 2)
 ```
 
-
+## RT
 ```{r RT_means}
 RT <- filter(RT_by_subject, test == 2, correct) %>%
   mutate(condition = replace(as.character(interaction(practice, practice_cue_type)),
                              is.na(practice_cue_type),
                              "N")
          ) %>%
-  whoppeR::WISEsummary(dependentvars = c("mean_RT", "mean_logRT", "median_RT"), idvar = "subject",
+  whoppeR::WISEsummary(dependentvars = c("mean_RT", "mean_logRT", "median_RT"),
+                       idvar = "subject",
                        betweenvars = "group", withinvars = "condition"
                        )
 names(RT) <- gsub(pattern = "_mean$", "", names(RT))
 ```
 
-```{r RT_plot}
+```{r RT_means_plot}
 RT_plot <- mutate(RT, condition = factor(condition,
                                          levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
                                          )
@@ -399,43 +462,98 @@ RT_plot <- mutate(RT, condition = factor(condition,
 print(RT_plot)
 ```
 
-
+### lme4::lmer
 ```{r RT_lmer}
 RT_lmer_data <- filter(acc_data, correct) 
-cor_RT_lmm <- mixed(logRT ~ group*condition + (condition|subject),
-                    method = "KR",
-                    data = RT_lmer_data,
-                    control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))
-                    )
-cor_RT_lmm_summary <- summary(cor_RT_lmm$full_model, ddf="Kenward-Roger")
+RT_lmer <- mixed(logRT ~ group*condition + (condition|subject),
+                 method = "KR",
+                 data = RT_lmer_data,
+                 control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))
+                 )
+RT_lmer_summary <- summary(RT_lmer$full_model, ddf="Kenward-Roger")
+print(RT_lmer)
+```
 
+```{r RT_lmer_contrasts}
 emm_options(pbkrtest.limit = 6000)
-RT_emm <- emmeans(cor_RT_lmm , specs = c("group", "condition"))
-RT_contrasts <- summary(contrast(RT_emm, method = my_contrasts.emmc, by ="group",
-                                  adjust = 'holm')
-                         )
+RT_lmer_EMM <- emmeans(RT_lmer , specs = c("group", "condition"))
+RT_lmer_contrasts <- contrast(RT_lmer_EMM, method = my_contrasts.emmc,
+                              by ="group", adjust = 'holm')
 
-knitr::kable(nice(cor_RT_lmm), format = 'html') %>%
+```
+
+```{r RT_lmer_display}
+RT_lmer_EMM_plot <- 
+  ggplot(as.data.frame(RT_lmer_EMM),
+         aes(x = group, y = emmean, color = condition, group = condition)
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
+  scale_y_continuous("Log RT (s)") + 
+  color_scale +
+  theme_grey(base_size = 16) +
+  ggtitle("lme4::lmer Model Predictions")
+
+RT_lmer_contrasts_plot <- plot(RT_lmer_contrasts) +
+  geom_vline(xintercept = 0) +
+  ggtitle("Contrasts")
+
+grid.arrange(RT_lmer_EMM_plot, RT_lmer_contrasts_plot, ncol = 2)
+
+knitr::kable(nice(RT_lmer), format = 'html') %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
-select(as.data.frame(RT_contrasts), group, contrast, estimate:p.value) %>%
+select(as.data.frame(summary(RT_lmer_contrasts)), group, contrast, estimate:p.value) %>%
 knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = paste(attr(RT_contrasts,"mesg"), collapse = ". ")) %>%
+             caption = paste(attr(RT_lmer_contrasts,"mesg"), collapse = ". ")) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
 ```
 
+### rstanarm::stan_lmer
+```{r RT_rstan_glmer}
+RT_rstan_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subject),
+                                      data = RT_lmer_data,
+                                      contrasts = list(group = 'contr.sum',
+                                                       condition = 'contr.sum'),
+                                      seed = 123, adapt_delta = .975)
 
-```{r rstan_RT_glmer}
-RT_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subject),
-                                data = RT_lmer_data,
-                                seed = 123)
+summary(RT_rstan_lmer_uninformed,
+        pars = names(fixef(RT_rstan_lmer_uninformed)))
+```
 
-RT_lmer_uninformed_EMM <- emmeans(RT_lmer_uninformed, ~ group * condition)
-RT_lmer_uninformed_contrasts <- contrast(RT_lmer_uninformed_EMM, 'my_contrasts',
+```{r RT_rstan_glmer_contrasts}
+RT_rstan_lmer_uninformed_EMM <- emmeans(RT_rstan_lmer_uninformed, ~ group * condition)
+RT_rstan_lmer_uninformed_contrasts <- contrast(RT_rstan_lmer_uninformed_EMM, 'my_contrasts',
                                          by = "group")
 
-plot(RT_lmer_uninformed_contrasts) + geom_vline(xintercept = 0)
+RT_rstan_lmer_EMM_plot <- 
+  ggplot(as.data.frame(RT_rstan_lmer_uninformed_EMM),
+         aes(x = group, y = emmean, color = condition, group = condition)
+         ) +
+  geom_point(size = 2, position = position_dodge(.1)) +
+  geom_line(position = position_dodge(.1)) +
+  geom_errorbar(aes(ymin = lower.HPD, ymax = upper.HPD),
+                width = .15,
+                position = position_dodge(.1)) +
+  x_axis_scale +
+  scale_y_continuous("Log RT (s)") + 
+  color_scale +
+  theme_grey(base_size = 16) +
+  ggtitle("rstan_lmer Model Predictions\n(Weak Priors)")
+
+RT_rstan_lmer_uninformed_contrasts_plot <-
+  plot(RT_rstan_lmer_uninformed_contrasts) +
+  geom_vline(xintercept = 0) +
+  ggtitle("Contrasts")
+
+grid.arrange(RT_rstan_lmer_EMM_plot,
+             RT_rstan_lmer_uninformed_contrasts_plot,
+             ncol = 2)
 ```
 
 # Questions
