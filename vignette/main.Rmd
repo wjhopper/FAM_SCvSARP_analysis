@@ -23,6 +23,8 @@ library(whoppeR)
 library(afex)
 library(bindrcpp)
 library(rstanarm)
+library(kableExtra)
+library(magrittr)
 source("../R/test_tidying.R")
 ```
 
@@ -193,25 +195,6 @@ print(acc_plot)
 ```{r acc_glmer}
 afex::set_sum_contrasts()
 
-# This function absolutely relies on hard-coding the order of the factor levels in the regressions anlysis. If the factors are for some reason ordered in some other fashion than described in the row names here, these contrasts will not match their labels!
-
-my_contrasts.emmc <- function(...) {
-  custom_contrast_matrix <- data.frame(`S.semantic - S.episodic` = c(-1, 1, 0, 0, 0),
-                                       `T.semantic - S.semantic` = c(0, -1, 1, 0, 0),
-                                       `T.episodic - T.semantic` = c(0, 0, -1, 1, 0),
-                                       `T.episodic - S.episodic` = c(-1, 0, 0, 1, 0),
-                                       `N - T.episodic` =          c(0, 0, 0, -1, 1),
-                                       `N - T.semantic` =          c(0, 0, -1, 0, 1),
-                                       `N - S.semantic` =          c(0, -1, 0, 0, 1),
-                                       `N - S.episodic` =          c(-1, 0, 0, 0, 1),
-                                       row.names = c("S.episodic","S.semantic","T.semantic","T.episodic","N"),
-                                       check.names = FALSE
-                                       )
-  attr(custom_contrast_matrix, "desc") <- "Subset of pairwise comparisions"
-  attr(custom_contrast_matrix, "adjust") <- "holm"
-  return(custom_contrast_matrix)
-}
-
 acc_data <- mutate(tests_raw,
                    condition = replace(as.character(interaction(practice, practice_cue_type)),
                                        is.na(practice_cue_type),
@@ -237,9 +220,41 @@ summary(acc_glmer$full_model)
 ```
 
 ```{r acc_glmer_contrasts}
+# These 2 functions absolutely rely on hard-coding the order of the factor levels in the regressions anlysis. If the factors are for some reason ordered in some other fashion than described in the row names here, these contrasts will not match their labels!
+my_contrasts.emmc <- function(...) {
+  custom_contrast_matrix <- data.frame(`S.semantic - S.episodic` = c(-1, 1, 0, 0, 0),
+                                       `T.semantic - S.semantic` = c(0, -1, 1, 0, 0),
+                                       `T.episodic - T.semantic` = c(0, 0, -1, 1, 0),
+                                       `T.episodic - S.episodic` = c(-1, 0, 0, 1, 0),
+                                       `N - T.episodic` =          c(0, 0, 0, -1, 1),
+                                       `N - T.semantic` =          c(0, 0, -1, 0, 1),
+                                       `N - S.semantic` =          c(0, -1, 0, 0, 1),
+                                       `N - S.episodic` =          c(-1, 0, 0, 0, 1),
+                                       row.names = c("S.episodic","S.semantic","T.semantic","T.episodic","N"),
+                                       check.names = FALSE
+                                       )
+  attr(custom_contrast_matrix, "desc") <- "Subset of pairwise comparisions"
+  attr(custom_contrast_matrix, "adjust") <- "holm"
+  return(custom_contrast_matrix)
+}
+
+my_interaction_contrasts.emmc <- function(...) {
+  custom_contrast_matrix <- data.frame(`T.semantic - S.semantic` = c(0, -1, 1, 0, 0),
+                                       `T.episodic - S.episodic` = c(-1, 0, 0, 1, 0),
+                                       `T.episodic - T.semantic` = c(0, 0, -1, 1, 0),
+                                       row.names = c("S.episodic","S.semantic","T.semantic","T.episodic","N"),
+                                       check.names = FALSE
+                                       )
+  attr(custom_contrast_matrix, "desc") <- "Subset of pairwise comparisions"
+  attr(custom_contrast_matrix, "adjust") <- "holm"
+  return(custom_contrast_matrix)
+}
+
 acc_glmer_EMM <- emmeans(acc_glmer, specs = c("group", "condition"), type = "response")
 acc_glmer_contrasts <- contrast(acc_glmer_EMM, method = my_contrasts.emmc, 
                                 by = "group", type ="link", adjust = 'holm')
+acc_glmer_interactions <- contrast(acc_glmer_EMM, interaction = c('pairwise', 'my_interaction_contrasts'), 
+                                   type ="link", adjust = 'holm')
 ```
 
 ```{r acc_glmer_display}
@@ -263,16 +278,37 @@ acc_glmer_contrasts_plot <- plot(acc_glmer_contrasts) +
   geom_vline(xintercept = 0) +
   ggtitle("Contrasts")
 
+## Cell means & Contrasts
 grid.arrange(acc_glmer_EMM_plot, acc_glmer_contrasts_plot, ncol = 2)
 
-knitr::kable(nice(acc_glmer), format = 'html') %>%
+## ANOVA/LRT Table
+knitr::kable(nice(acc_glmer), format = 'html',
+             caption = paste(attr(acc_glmer[[1]], 'heading'), collapse = ". ")
+             ) %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
-select(as.data.frame(summary(acc_glmer_contrasts)), group, contrast, estimate:p.value) %>%
+## Contrasts Table
+select(as.data.frame(summary(acc_glmer_contrasts)), group, contrast, estimate:p.value) %T>% 
+  { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
+                  collapse = " ") } %>%
 knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = paste(attr(acc_glmer_contrasts,"mesg"), collapse = ". ")) %>%
+             caption = cap) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
+
+## Interactions of interest
+rename(as.data.frame(summary(acc_glmer_interactions)),
+       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
+  { cap <<- paste(c("Interaction contrasts. ",  attr(., "mesg")),
+                  collapse = " ")} %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(p.value < .05, "red", "#333333"),
+                               format = 'html'
+                               )
+         ) %>%  
+  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE)
 ```
 
 ### rstanarm::stan_glmer
@@ -287,7 +323,8 @@ acc_rstan_glmer_uninformed <- stan_glmer(correct ~ group*condition + (1|subject)
                                          )
 
 summary(acc_rstan_glmer_uninformed,
-        pars = names(fixef(acc_rstan_glmer_uninformed)))
+        pars = names(fixef(acc_rstan_glmer_uninformed)),
+        probs = c(.025, .5, .975), digits = 3)
 ```
 
 ```{r rstan_acc_glmer_uninformed_contrasts}
@@ -295,6 +332,15 @@ acc_rstan_glmer_uninformed_EMM <- emmeans(acc_rstan_glmer_uninformed,
                                           specs = c("group", "condition"),
                                           type = "response")
 
+acc_rstan_glmer_uninformed_contrasts <- contrast(acc_rstan_glmer_uninformed_EMM, 'my_contrasts',
+                                                 by = "group", type ="link")
+
+acc_rstan_glmer_uninformed_interactions <- contrast(acc_rstan_glmer_uninformed_EMM,
+                                                    interaction = c('pairwise', 'my_interaction_contrasts'),
+                                                    type ="link", adjust = 'holm')
+```
+
+```{r rstan_acc_glmer_uninformed_display}
 acc_rstan_glmer_uninformed_EMM_plot <-
   ggplot(as.data.frame(acc_rstan_glmer_uninformed_EMM),
          aes(x = group, y = prob, color = condition, group = condition)
@@ -311,8 +357,6 @@ acc_rstan_glmer_uninformed_EMM_plot <-
   theme_grey(base_size = 16) +
   ggtitle("rstan_glmer Model Predictions\n(Weak Priors)")
 
-acc_rstan_glmer_uninformed_contrasts <- contrast(acc_rstan_glmer_uninformed_EMM, 'my_contrasts',
-                                                 by = "group", type ="link")
 acc_rstan_glmer_uninformed_contrasts_plot <-
   plot(acc_rstan_glmer_uninformed_contrasts) +
   geom_vline(xintercept = 0) +
@@ -321,7 +365,16 @@ acc_rstan_glmer_uninformed_contrasts_plot <-
 grid.arrange(acc_rstan_glmer_uninformed_EMM_plot,
              acc_rstan_glmer_uninformed_contrasts_plot,
              ncol = 2)
+## Interactions of Interest
+rename(as.data.frame(summary(acc_rstan_glmer_uninformed_interactions)),
+       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
+       { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
+                         collapse = " ") } %>%
+  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap ) %>%
+  kableExtra::kable_styling(full_width = FALSE)
 ```
+
 
 #### Informed priors
 ```{r rstan_acc_glmer_informed-priors}
@@ -347,7 +400,8 @@ acc_rstan_glmer <- stan_glmer(correct ~ group*condition + (1|subject),
                                              ),
                               seed = 124, iter = 3000)
 
-summary(acc_rstan_glmer, pars = names(fixef(acc_rstan_glmer)))
+summary(acc_rstan_glmer, pars = names(fixef(acc_rstan_glmer)),
+        probs = c(.025, .5, .975), digits = 3)
 ```
 
 ```{r rstan_acc_glmer_informed-priors_contrasts}
@@ -355,13 +409,20 @@ acc_rstan_glmer_EMM <- emmeans(acc_rstan_glmer,
                                specs = c("group", "condition"),
                                type = "response")
 
+acc_rstan_glmer_contrasts <- contrast(acc_rstan_glmer_EMM, 'my_contrasts',
+                                      by = "group", type ="link")
+
+acc_rstan_glmer_interactions <- contrast(acc_rstan_glmer_EMM,
+                                         interaction = c('pairwise', 'my_interaction_contrasts'),
+                                         type ="link", adjust = 'holm')
+```
+
+```{r stan_acc_glmer_informed-priors_display}
 acc_rstan_glmer_EMM_plot <- acc_rstan_glmer_uninformed_EMM_plot %+%
   as.data.frame(acc_rstan_glmer_EMM) +
   ggtitle("rstan_glmer Model Predictions\n(Informative Priors)")
 
-acc_rstan_glmer_contrasts <- contrast(acc_rstan_glmer_EMM, 'my_contrasts',
-                                      by = "group", type ="link")
-acc_rstan_glmer_contrasts_plot <- 
+acc_rstan_glmer_contrasts_plot <-
   plot(acc_rstan_glmer_contrasts) +
   geom_vline(xintercept = 0) +
   ggtitle("Contrasts")
@@ -369,6 +430,15 @@ acc_rstan_glmer_contrasts_plot <-
 grid.arrange(acc_rstan_glmer_EMM_plot,
              acc_rstan_glmer_contrasts_plot,
              ncol = 2)
+
+## Interactions of Interest
+rename(as.data.frame(summary(acc_rstan_glmer_interactions)),
+       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
+  { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
+                  collapse = " ") } %>%
+  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap ) %>%
+  kableExtra::kable_styling(full_width = FALSE)
 ```
 
 ## RT
@@ -412,10 +482,13 @@ print(RT_plot)
 ```{r RT_lmer}
 RT_lmer_data <- filter(acc_data, decided, recalled, correct)
 RT_lmer <- mixed(logRT ~ group*condition + (condition|subject),
-                 method = "KR",
                  data = RT_lmer_data,
+                 method = "KR",
+                 contrasts = list(group = 'contr.sum',
+                                  condition = 'contr.sum'),
                  control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))
                  )
+
 RT_lmer_summary <- summary(RT_lmer$full_model, ddf="Kenward-Roger")
 print(RT_lmer_summary)
 ```
@@ -450,18 +523,21 @@ RT_lmer_contrasts_plot <- plot(RT_lmer_contrasts) +
 
 grid.arrange(RT_lmer_EMM_plot, RT_lmer_contrasts_plot, ncol = 2)
 
-knitr::kable(nice(RT_lmer), format = 'html') %>%
+knitr::kable(nice(RT_lmer), format = 'html',
+             caption = paste(attr(RT_lmer[[1]], 'heading'), collapse=" ")) %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
-select(as.data.frame(summary(RT_lmer_contrasts)), group, contrast, estimate:p.value) %>%
-knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = paste(attr(RT_lmer_contrasts,"mesg"), collapse = ". ")) %>%
+select(as.data.frame(summary(RT_lmer_contrasts)), group, contrast, estimate:p.value) %T>%
+  {cap <<- paste(c("Within-group practice condition comparisons.", attr(., 'mesg')),
+                 collapse = " ")} %>%
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
 ```
 
 ### rstanarm::stan_lmer
-```{r RT_rstan_glmer}
+```{r RT_rstan_lmer}
 RT_rstan_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subject),
                                       data = RT_lmer_data,
                                       contrasts = list(group = 'contr.sum',
@@ -469,10 +545,11 @@ RT_rstan_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subje
                                       seed = 123, adapt_delta = .99)
 
 summary(RT_rstan_lmer_uninformed,
-        pars = names(fixef(RT_rstan_lmer_uninformed)))
+        pars = names(fixef(RT_rstan_lmer_uninformed)),
+        probs = c(.025, .5, .975), digits = 3)
 ```
 
-```{r RT_rstan_glmer_contrasts}
+```{r RT_rstan_lmer_contrasts}
 RT_rstan_lmer_uninformed_EMM <- emmeans(RT_rstan_lmer_uninformed, ~ group * condition)
 RT_rstan_lmer_uninformed_contrasts <- contrast(RT_rstan_lmer_uninformed_EMM, 'my_contrasts',
                                          by = "group")
