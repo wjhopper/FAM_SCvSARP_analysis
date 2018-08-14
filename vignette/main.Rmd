@@ -109,23 +109,13 @@ tests_raw <- bind_rows(`1`=test_practice_raw, `2`=final_test_raw,
          correct, RT, logRT, pre_typing_lag:post_typing_lag) %>%
   arrange(subject, test, list)
 
-# Remove trials where a remember/don't remember decision was not reached, and trial timed out.
-tests_raw <- filter(tests_raw, decided)
+# Mark trials where a remember/don't remember decision was not reached (time out trial) as incorrect
+tests_raw$correct[!tests_raw$decided] <- FALSE
 
 rm(tp_fuzzy, final_fuzzy, join_variables, select_variables)
 ```
 
 ```{r acc_and_RT_by_subject}
-#### Aggregate reaction time measures for each subject in each condition
-RT_by_subject <- tests_raw %>%
-  group_by(subject, group, test, practice, practice_cue_type, correct) %>%
-  filter(!is.na(RT)) %>%
-  summarise(N_RT_trials = n(),
-            mean_RT = mean(RT),
-            mean_logRT = mean(logRT),
-            median_RT = median(RT)) %>%
-  ungroup()
-
 #### Calculate accuracy for each subject in each condition
 acc_by_subject <- tests_raw %>%
   group_by(subject, group, test, practice, practice_cue_type) %>%
@@ -134,63 +124,17 @@ acc_by_subject <- tests_raw %>%
             percent_correct = N_correct/N_acc_trials) %>%
   ungroup()
 
-#### Calculate the RT difference from baseline on final test
-tmp <- RT_by_subject %>%
-  filter(test == 2) %>%
-  select(-test, -N_RT_trials) %>%
-  gather(key="var", value="value", mean_RT, median_RT, mean_logRT) %>%
-  unite(var, practice, var, sep=".") %>%
-  spread(var, value)
-
-control <- filter(tmp, is.na(practice_cue_type)) %>%
-  select(subject, correct, starts_with("N"))
-treatment <- filter(tmp, !is.na(practice_cue_type))%>%
-  select(-starts_with("N"))
-
-RT_diff_by_subject <- left_join(treatment, control, 
-                                by=c("subject", "correct")) %>%
-  mutate(SN.median_RT = S.median_RT - N.median_RT,
-         TN.median_RT = T.median_RT - N.median_RT,
-         SN.mean_logRT = S.mean_logRT - N.mean_logRT,
-         TN.mean_logRT = T.mean_logRT - N.mean_logRT,
-         SN.mean_RT = S.mean_RT - N.mean_RT,
-         TN.mean_RT = T.mean_RT - N.mean_RT) %>%
-  select(subject, group, practice_cue_type, correct,
-         SN.median_RT, TN.median_RT,
-         SN.mean_logRT, TN.mean_logRT,
-         SN.mean_RT, TN.mean_RT) %>%
-  gather(key="var", value="value", -(subject:correct)) %>%
-  separate(var, into = c("practice", "var"),sep = "\\.") %>%
-  spread(var,value) %>%
-  mutate(practice = paste(substr(practice, 1, 1),
-                          substr(practice, 2, 2),
-                          sep = "-"))
+#### Aggregate reaction time measures for each subject in each condition
+RT_by_subject <- tests_raw %>%
+  filter(decided, recalled == correct) %>%
+  group_by(subject, group, test, practice, practice_cue_type, correct) %>%
+  summarise(N_RT_trials = n(),
+            mean_RT = mean(RT),
+            mean_logRT = mean(logRT),
+            median_RT = median(RT)) %>%
+  ungroup()
 
 
-#### Calculate the accuracy difference from baseline on final test
-tmp <- acc_by_subject %>%
-  filter(test == 2) %>%
-  select(subject:practice_cue_type, percent_correct, -test) %>%
-  gather(key="var", value="value", percent_correct) %>%
-  unite(var, practice, var, sep=".") %>%
-  spread(var, value)
-
-control <- filter(tmp, is.na(practice_cue_type)) %>%
-  select(subject, starts_with("N"))
-treatment <- filter(tmp, !is.na(practice_cue_type))%>%
-  select(-starts_with("N"))
-
-acc_diff_by_subject <- left_join(treatment, control, 
-                                by=c("subject")) %>%
-  mutate(SN.percent_correct = S.percent_correct - N.percent_correct,
-         TN.percent_correct = T.percent_correct - N.percent_correct) %>%
-  select(subject, group, practice_cue_type, SN.percent_correct, TN.percent_correct) %>%
-  gather(key="var", value="value", SN.percent_correct, TN.percent_correct) %>%
-  separate(var, into = c("practice", "var"),sep = "\\.") %>%
-  spread(var,value) %>%
-  mutate(practice = paste(substr(practice, 1, 1),
-                          substr(practice, 2, 2),
-                          sep = "-"))
 ```
 
 ```{r plotting_scales}
@@ -222,9 +166,10 @@ acc <- filter(acc_by_subject, test == 2) %>%
 ```
 
 ```{r acc_means_plot}
-acc_plot <- mutate(acc, condition = factor(condition,
-                                           levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
-                                           )
+acc_plot <- mutate(acc,
+                   condition = factor(condition,
+                                      levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
+                                      )
                    ) %>%
   ggplot(aes(x = group, y = percent_correct,
              color = condition, group = condition
@@ -441,9 +386,10 @@ names(RT) <- gsub(pattern = "_mean$", "", names(RT))
 ```
 
 ```{r RT_means_plot}
-RT_plot <- mutate(RT, condition = factor(condition,
-                                         levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
-                                         )
+RT_plot <- mutate(RT,
+                  condition = factor(condition,
+                                     levels = c("S.episodic","S.semantic","T.semantic","T.episodic","N")
+                                     )
                   ) %>%
   ggplot(aes(x = group, y = mean_logRT,
              color = condition, group = condition
@@ -464,14 +410,14 @@ print(RT_plot)
 
 ### lme4::lmer
 ```{r RT_lmer}
-RT_lmer_data <- filter(acc_data, correct) 
+RT_lmer_data <- filter(acc_data, decided, recalled, correct)
 RT_lmer <- mixed(logRT ~ group*condition + (condition|subject),
                  method = "KR",
                  data = RT_lmer_data,
                  control = lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))
                  )
 RT_lmer_summary <- summary(RT_lmer$full_model, ddf="Kenward-Roger")
-print(RT_lmer)
+print(RT_lmer_summary)
 ```
 
 ```{r RT_lmer_contrasts}
@@ -520,7 +466,7 @@ RT_rstan_lmer_uninformed <- stan_lmer(logRT ~ group*condition + (condition|subje
                                       data = RT_lmer_data,
                                       contrasts = list(group = 'contr.sum',
                                                        condition = 'contr.sum'),
-                                      seed = 123, adapt_delta = .975)
+                                      seed = 123, adapt_delta = .99)
 
 summary(RT_rstan_lmer_uninformed,
         pars = names(fixef(RT_rstan_lmer_uninformed)))
