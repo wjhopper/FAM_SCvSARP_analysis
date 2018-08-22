@@ -294,8 +294,13 @@ knitr::kable(nice(acc_glmer), format = 'html',
 select(as.data.frame(summary(acc_glmer_contrasts)), group, contrast, estimate:p.value) %T>% 
   { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
                   collapse = " ") } %>%
-knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = cap) %>%
+  mutate(contrast = cell_spec(contrast,
+                               color = ifelse(p.value < .05, "red", "#333333"),
+                               format = 'html'
+                               )
+         ) %>%  
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
 
@@ -372,13 +377,35 @@ acc_rstan_glmer_uninformed_contrasts_plot <-
 grid.arrange(acc_rstan_glmer_uninformed_EMM_plot,
              acc_rstan_glmer_uninformed_contrasts_plot,
              ncol = 2)
+
+## Contrasts Table
+select(as.data.frame(summary(acc_rstan_glmer_uninformed_contrasts)),
+       group, contrast, estimate, `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>% 
+  { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
+                  collapse = " ") } %>%
+  mutate(contrast = cell_spec(contrast,
+                              color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                              format = 'html'
+                              )
+         ) %>%
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 1)
+
 ## Interactions of Interest
 rename(as.data.frame(summary(acc_rstan_glmer_uninformed_interactions)),
-       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
+       group = group_pairwise, condition = condition_my_interaction_contrasts,
+       `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>%
        { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
                          collapse = " ") } %>%
-  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
-               caption = cap ) %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                               format = 'html'
+                               )
+         ) %>%  
+    knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
 
@@ -400,9 +427,9 @@ acc_rstan_glmer <- stan_glmer(correct ~ group*condition + (1|subject),
                               family = binomial(link = "logit"),
                               contrasts = list(group = 'contr.sum',
                                                condition = 'contr.sum'),
-                              prior_intercept = normal(0.268, 5 * .131, autoscale = FALSE),
+                              prior_intercept = normal(0.268, 3 * .131, autoscale = FALSE),
                               prior = normal(location = sapply(coef_priors, `[[`, "mean"),
-                                             scale = 5 * sapply(coef_priors, `[[`, "sd"),
+                                             scale = 3 * sapply(coef_priors, `[[`, "sd"),
                                              autoscale = FALSE
                                              ),
                               sparse = TRUE,
@@ -439,13 +466,34 @@ grid.arrange(acc_rstan_glmer_EMM_plot,
              acc_rstan_glmer_contrasts_plot,
              ncol = 2)
 
+## Contrasts Table
+select(as.data.frame(summary(acc_rstan_glmer_contrasts)),
+       group, contrast, estimate, `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>% 
+  { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
+                  collapse = " ") } %>%
+  mutate(contrast = cell_spec(contrast,
+                              color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                              format = 'html'
+                              )
+         ) %>%
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 1)
+
 ## Interactions of Interest
 rename(as.data.frame(summary(acc_rstan_glmer_interactions)),
-       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
-  { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
-                  collapse = " ") } %>%
-  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
-               caption = cap ) %>%
+       group = group_pairwise, condition = condition_my_interaction_contrasts,
+       `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>%
+       { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
+                         collapse = " ") } %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                               format = 'html'
+                               )
+         ) %>%  
+    knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
 
@@ -479,7 +527,8 @@ RT_plot <- mutate(RT,
                 width = .15,
                 position = position_dodge(.1)) +
   x_axis_scale +
-  scale_y_continuous("Log RT (s)") + 
+  scale_y_continuous("Log RT (s)", limits = c(.3, 1.1),
+                     breaks = seq(.3, 1.1, by = .1)) +
   color_scale +
   theme_grey(base_size = 16)
 
@@ -504,9 +553,13 @@ print(RT_lmer_summary)
 ```{r RT_lmer_contrasts}
 emm_options(pbkrtest.limit = 6000)
 RT_lmer_EMM <- emmeans(RT_lmer , specs = c("group", "condition"))
+
 RT_lmer_contrasts <- contrast(RT_lmer_EMM, method = my_contrasts.emmc,
                               by ="group", adjust = 'holm')
 
+RT_lmer_interactions <- contrast(RT_lmer_EMM,
+                                 interaction = c('pairwise', 'my_interaction_contrasts'),
+                                 adjust = 'holm')
 ```
 
 ```{r RT_lmer_display}
@@ -520,32 +573,56 @@ RT_lmer_EMM_plot <-
                 width = .15,
                 position = position_dodge(.1)) +
   x_axis_scale +
-  scale_y_continuous("Log RT (s)") + 
+  scale_y_continuous("Log RT (s)", limits = c(.3, 1.1),
+                     breaks = seq(.3, 1.1, by = .1)) +
   color_scale +
   guides(color = guide_legend(nrow = 3)) +
   theme_grey(base_size = 16) +
-  theme(legend.position = c(.25,.85),
+  guides(color = guide_legend(nrow = 3)) +
+  theme(legend.position = 'bottom',
+        title = element_text(size = 12),
         legend.text = element_text(size = 10),
-        legend.title = element_text(size = 12))
+        legend.title = element_text(size = 12)) +
   ggtitle("lme4::lmer Model Predictions")
 
 RT_lmer_contrasts_plot <- plot(RT_lmer_contrasts) +
   geom_vline(xintercept = 0) +
   ggtitle("Contrasts")
 
+## LRT/ANOVA Table
 grid.arrange(RT_lmer_EMM_plot, RT_lmer_contrasts_plot, ncol = 2)
 
 knitr::kable(nice(RT_lmer), format = 'html',
              caption = paste(attr(RT_lmer[[1]], 'heading'), collapse=" ")) %>%
   kableExtra::kable_styling(full_width = FALSE, position = 'float_left')
 
+## Contrasts Table
 select(as.data.frame(summary(RT_lmer_contrasts)), group, contrast, estimate:p.value) %T>%
   {cap <<- paste(c("Within-group practice condition comparisons.", attr(., 'mesg')),
                  collapse = " ")} %>%
-  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
-             caption = cap) %>%
+  mutate(contrast = cell_spec(contrast,
+                               color = ifelse(p.value < .05, "red", "#333333"),
+                               format = 'html'
+                               )
+         ) %>%
+    knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE) %>%
   kableExtra::collapse_rows(columns = 1)
+
+## Interactions of interest
+rename(as.data.frame(summary(RT_lmer_interactions)),
+       group = group_pairwise, condition = condition_my_interaction_contrasts) %T>%
+  { cap <<- paste(c("Interaction contrasts. ",  attr(., "mesg")),
+                  collapse = " ")} %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(p.value < .05, "red", "#333333"),
+                               format = 'html'
+                               )
+         ) %>%  
+  knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
+               caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE)
 ```
 
 ### rstanarm::stan_lmer
@@ -568,11 +645,10 @@ summary(RT_rstan_lmer_uninformed,
 RT_rstan_lmer_uninformed_EMM <- emmeans(RT_rstan_lmer_uninformed, ~ group * condition)
 
 RT_rstan_lmer_uninformed_contrasts <- contrast(RT_rstan_lmer_uninformed_EMM, 'my_contrasts',
-                                               by = "group", adjust = 'holm')
+                                               by = "group")
 
 RT_rstan_lmer_uninformed_interactions <- contrast(RT_rstan_lmer_uninformed_EMM,
-                                                  interaction = c('pairwise', 'pairwise'),
-                                                  adjust = 'holm')
+                                                  interaction = c('pairwise', 'pairwise'))
 ```
 
 ```{r RT_rstan_lmer_uninformed_display, dependson='RT_rstan_lmer_uninformed_contrasts'}
@@ -586,11 +662,14 @@ RT_rstan_lmer_uninformed_EMM_plot <-
                 width = .15,
                 position = position_dodge(.1)) +
   x_axis_scale +
-  scale_y_continuous("Log RT (s)") + 
+  scale_y_continuous("Log RT (s)", limits = c(.3, 1.1),
+                     breaks = seq(.3, 1.1, by= .1)) +
   color_scale +
   theme_grey(base_size = 16) +
   guides(color = guide_legend(nrow = 3)) +
-  theme(legend.position = c(.25,.85),
+  theme(legend.position = 'bottom',
+        title = element_text(size = 12),
+        legend.margin = margin(t=-5),
         legend.text = element_text(size = 10),
         legend.title = element_text(size = 12)) +
   ggtitle("rstan_lmer Model Predictions\n(Weak Priors)")
@@ -604,35 +683,56 @@ grid.arrange(RT_rstan_lmer_uninformed_EMM_plot,
              RT_rstan_lmer_uninformed_contrasts_plot,
              ncol = 2)
 
+## Contrasts Table
+select(as.data.frame(summary(RT_rstan_lmer_uninformed_contrasts)),
+       group, contrast, estimate, `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>% 
+  { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
+                  collapse = " ") } %>%
+  mutate(contrast = cell_spec(contrast,
+                              color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                              format = 'html'
+                              )
+         ) %>%
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 1)
+
 ## Interactions of Interest
 rename(as.data.frame(summary(RT_rstan_lmer_uninformed_interactions)),
-       group = group_pairwise, condition = condition_pairwise) %T>%
-  { cap <<- paste(c("HDI for interactions.", attr(., "mesg")),
-                  collapse = " ") } %>%
+       group = group_pairwise, condition = condition_pairwise,
+       `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>%
+       { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
+                         collapse = " ") } %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                               format = 'html'
+                               )
+         ) %>%  
   knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
-               caption = cap ) %>%
+               caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
 
 #### Informed priors
 ```{r RT_rstan_lmer_informed-priors}
-RT_coef_priors = list("group1" = c('mean' = -.2129, 'sd' = .0021),
-                      "condition1" = c('mean' = -.0159, 'sd' = .001),
+RT_coef_priors = list("group1" = c('mean' = -.2129, 'sd' = .0219),
+                      "condition1" = c('mean' = -.0159, 'sd' = .011),
                       "condition2" = c('mean' = -0.046, 'sd' = .012),
                       "condition3" = c('mean' = -0.046, 'sd' = .012),
-                      "condition4" = c('mean' = -.0159, 'sd' = .001),
+                      "condition4" = c('mean' = -.171, 'sd' = .011),
                       "group1:condition1" = c('mean' = 0.006, 'sd' = .001),
                       "group1:condition2" = c('mean' = 0, 'sd' = .012),
                       "group1:condition3" = c('mean' = 0, 'sd' = .012),
-                      "group1:condition4" = c('mean' = -.032, 'sd' = .001))
+                      "group1:condition4" = c('mean' = -.032, 'sd' = .011))
 
 RT_rstan_lmer <- stan_lmer(logRT ~ group*condition + (1|subject),
                            data = RT_lmer_data,
                            contrasts = list(group = 'contr.sum',
                                             condition = 'contr.sum'),
-                           prior_intercept = normal(.638, 5*.0021, autoscale = FALSE),
-                           prior = normal(location = sapply(coef_priors, `[[`, "mean"),
-                                          scale = 5 * sapply(coef_priors, `[[`, "sd"),
+                           prior_intercept = normal(.638, 3*.0219, autoscale = FALSE),
+                           prior = normal(location = sapply(RT_coef_priors, `[[`, "mean"),
+                                          scale = 3 * sapply(RT_coef_priors, `[[`, "sd"),
                                           autoscale = FALSE
                                           ),
                            sparse = TRUE,
@@ -657,6 +757,7 @@ RT_rstan_lmer_interactions <- contrast(RT_rstan_lmer_EMM,
 ```
 
 ```{r RT_stan_lmer_informed-priors_display, dependson = c('RT_rstan_lmer_informed-priors_contrasts','RT_rstan_lmer_uninformed_display')}
+
 RT_rstan_lmer_EMM_plot <- RT_rstan_lmer_uninformed_EMM_plot %+%
   as.data.frame(RT_rstan_lmer_EMM) +
   ggtitle("rstan_glmer Model Predictions\n(Informative Priors)")
@@ -669,13 +770,34 @@ grid.arrange(RT_rstan_lmer_EMM_plot,
              RT_rstan_lmer_contrasts_plot,
              ncol = 2)
 
+# Contrasts Table
+select(as.data.frame(summary(RT_rstan_lmer_contrasts)),
+       group, contrast, estimate, `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>% 
+  { cap <<- paste(c("Within-group practice condition comparisons. ", attr(., "mesg")),
+                  collapse = " ") } %>%
+  mutate(contrast = cell_spec(contrast,
+                              color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                              format = 'html'
+                              )
+         ) %>%
+  knitr::kable(format = 'html', align = 'crccccc', digits = c(0,0,3,3,3,3,4),
+             caption = cap, escape = FALSE) %>%
+  kableExtra::kable_styling(full_width = FALSE) %>%
+  kableExtra::collapse_rows(columns = 1)
+
 ## Interactions of Interest
 rename(as.data.frame(summary(RT_rstan_lmer_interactions)),
-       group = group_pairwise, condition = condition_pairwise) %T>%
-  { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
-                  collapse = " ") } %>%
+       group = group_pairwise, condition = condition_pairwise,
+       `Lower HPD` = lower.HPD, `Upper HPD` = upper.HPD) %T>%
+       { cap <<- paste(c("HDI for interaction contrast.", attr(., "mesg")),
+                         collapse = " ") } %>%
+  mutate(condition = cell_spec(condition,
+                               color = ifelse(`Lower HPD` < 0 & `Upper HPD` > 0, "#333333", "red"),
+                               format = 'html'
+                               )
+         ) %>%  
   knitr::kable(format = "html", digits = c(0,0,3,3,3,3,4),
-               caption = cap ) %>%
+               caption = cap, escape = FALSE) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
 
