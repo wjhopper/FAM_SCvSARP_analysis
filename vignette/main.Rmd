@@ -721,7 +721,7 @@ RT_coef_priors = list("group1" = c('mean' = -.2129, 'sd' = .0219),
                       "condition2" = c('mean' = -0.046, 'sd' = .012),
                       "condition3" = c('mean' = -0.046, 'sd' = .012),
                       "condition4" = c('mean' = -.171, 'sd' = .011),
-                      "group1:condition1" = c('mean' = 0.006, 'sd' = .001),
+                      "group1:condition1" = c('mean' = 0.006, 'sd' = .011),
                       "group1:condition2" = c('mean' = 0, 'sd' = .012),
                       "group1:condition3" = c('mean' = 0, 'sd' = .012),
                       "group1:condition4" = c('mean' = -.032, 'sd' = .011))
